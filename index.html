@@ -111,231 +111,126 @@
 
 
 <script>
-
     const SUPABASE_URL = "https://qbevpwghcjtdeqlmkimh.supabase.co"; 
-
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiZXZwd2doY2p0ZGVxbG1raW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3OTMxMDksImV4cCI6MjA5NzM2OTEwOX0.U9SncOyUdFQIvPGvcYXifIaiFzsSoHRNB_TrvD8oJWM";
-
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-
 
     let activeGlobalMode = "REGISTRATION"; 
 
-
-
     window.onload = function() {
-
         listenForGlobalGameModeToggles();
-
     };
 
-
-
-    // Connect real-time receiver to change the user interface dynamically based on what you click on your laptop
-
+    // Connect real-time receiver
     function listenForGlobalGameModeToggles() {
-
         supabaseClient
-
             .channel('public:submissions')
-
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'submissions' }, async () => {
-
-                // When any check-in occurs, download a clean roster to populate the selector list
-
                 refreshRosterListDropdown();
-
             })
-
             .subscribe();
-
             
-
-        // Initial setup run
-
         refreshRosterListDropdown();
-
     }
-
-
 
     async function refreshRosterListDropdown() {
-
         const { data, error } = await supabaseClient.from('submissions').select('team_name');
-
         if (data) {
-
             const uniqueTeamsList = Array.from(new Set(data.map(item => item.team_name)));
-
             const dropdown = document.getElementById('teamDropdown');
-
+            const cachedTeam = localStorage.getItem('trivia_team_name');
             
-
-            // If teams exist, morph the app mode to active gameplay fields!
-
-            if (uniqueTeamsList.length > 0) {
-
+            // Only morph the screen to gameplay if teams exist AND this specific device has registered
+            if (uniqueTeamsList.length > 0 && cachedTeam) {
                 activeGlobalMode = "GAMEPLAY";
-
                 document.getElementById('app-title').innerText = "HHC Trivia Engine";
-
                 document.getElementById('teamName').style.display = 'none';
-
                 document.getElementById('team-label').innerText = "Select Your Team";
-
                 
-
                 dropdown.innerHTML = '';
-
                 uniqueTeamsList.forEach(team => {
-
                     const option = document.createElement('option');
-
                     option.value = team;
-
                     option.innerText = team;
-
                     dropdown.appendChild(option);
-
                 });
-
                 
-
                 dropdown.style.display = 'block';
-
                 document.getElementById('gameplay-fields').style.display = 'block';
-
                 document.getElementById('answer-wrapper').style.display = 'block';
-
                 document.getElementById('submit-btn').innerText = "Lock It In!";
-
                 
-
                 // Keep team anchored to their selection
-
-                const cachedTeam = localStorage.getItem('trivia_team_name');
-
-                if (cachedTeam && uniqueTeamsList.includes(cachedTeam)) {
-
+                if (uniqueTeamsList.includes(cachedTeam)) {
                     dropdown.value = cachedTeam;
-
                 }
-
+            } else {
+                // Keep in registration mode if they haven't checked in yet
+                activeGlobalMode = "REGISTRATION";
+                document.getElementById('app-title').innerText = "HHC Registration";
+                document.getElementById('teamName').style.display = 'block';
+                document.getElementById('team-label').innerText = "Register Your Team Name";
+                dropdown.style.display = 'none';
+                document.getElementById('gameplay-fields').style.display = 'none';
+                document.getElementById('answer-wrapper').style.display = 'none';
+                document.getElementById('submit-btn').innerText = "Check In Team";
             }
-
         }
-
     }
 
-
-
     async function executeSubmissionRoute() {
-
         const submitBtn = document.getElementById('submit-btn');
-
         let chosenTeamName = "";
 
-
-
         if (activeGlobalMode === "REGISTRATION") {
-
             chosenTeamName = document.getElementById('teamName').value.trim();
-
             if (!chosenTeamName) { alert("Please type a team name to check in."); return; }
-
             
-
             localStorage.setItem('trivia_team_name', chosenTeamName);
-
             submitBtn.disabled = true;
-
             
-
             // Send a blank dummy text structure to log the team into the database rosters
-
             await supabaseClient.from('submissions').insert([{ team_name: chosenTeamName, answer_submitted: "[Checked In]", round_number: 0, question_number: 0 }]);
-
             
-
             document.getElementById('success').innerText = "🎉 Team Registered! Watch the Big Screen.";
-
             document.getElementById('success').style.display = 'block';
-
             setTimeout(() => { location.reload(); }, 2000);
-
         } 
-
         
-
         else {
-
             chosenTeamName = document.getElementById('teamDropdown').value;
-
             const ansText = document.getElementById('playerAnswer').value.trim();
-
             const qNum = parseInt(document.getElementById('questionNum').value);
-
-
 
             if (!ansText) { alert("Please type an answer before locking it in."); return; }
 
-
-
             localStorage.setItem('trivia_team_name', chosenTeamName);
-
             submitBtn.disabled = true;
-
             submitBtn.innerText = "Sending...";
 
-
-
             const roundNum = Math.ceil(qNum / 10);
-
             const { error } = await supabaseClient.from('submissions').insert([{ team_name: chosenTeamName, answer_submitted: ansText, round_number: roundNum, question_number: qNum }]);
 
-
-
             if (!error) {
-
                 document.getElementById('playerAnswer').value = '';
-
                 if (qNum < 50) document.getElementById('questionNum').value = qNum + 1;
-
                 
-
                 const banner = document.getElementById('success');
-
                 banner.innerText = "🚀 Answer sent to host panel!";
-
                 banner.style.display = 'block';
-
                 
-
                 setTimeout(() => {
-
                     banner.style.display = 'none';
-
                     submitBtn.disabled = false;
-
                     submitBtn.innerText = "Lock It In!";
-
                 }, 2000);
-
             } else {
-
                 alert("Error sending. Please retry.");
-
                 submitBtn.disabled = false;
-
                 submitBtn.innerText = "Lock It In!";
-
             }
-
         }
-
     }
-
 </script>
 
 </body>
