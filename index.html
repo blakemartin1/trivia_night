@@ -1,114 +1,51 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>HHC Trivia Engine</title>
-
     <style>
-
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: white; padding: 20px; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-
         .card { background: #1e293b; padding: 30px; border-radius: 14px; box-shadow: 0 12px 30px rgba(0,0,0,0.4); max-width: 450px; width: 100%; box-sizing: border-box; border: 1px solid #334155; }
-
         h2 { margin-top: 0; color: #38bdf8; font-size: 1.8rem; text-align: center; margin-bottom: 25px; font-weight: 700; }
-
         .form-group { margin-bottom: 20px; }
-
         label { display: block; margin-bottom: 8px; color: #94a3b8; font-weight: 600; font-size: 0.95rem; }
-
         input, select { width: 100%; padding: 13px; border-radius: 8px; border: 2px solid #334155; background: #0f172a; color: white; font-size: 1rem; box-sizing: border-box; transition: border-color 0.2s; }
-
         input:focus, select:focus { border-color: #38bdf8; outline: none; }
-
         button { width: 100%; padding: 15px; border: none; border-radius: 8px; background: #14532d; color: white; font-size: 1.15rem; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
-
         button:hover { background: #166534; }
-
         button:disabled { background: #475569; cursor: not-allowed; opacity: 0.6; }
-
         .success-banner { background: #10b981; color: white; padding: 12px; border-radius: 6px; text-align: center; font-weight: bold; margin-top: 15px; display: none; }
-
     </style>
-
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
 </head>
-
 <body>
 
-
-
 <div class="card">
-
     <div style="text-align: center; margin-bottom: 12px;">
-
         <img src="hampstead-logo.png" alt="HHC Logo" style="width: 85px; height: auto;">
-
     </div>
-
     <h2 id="app-title">HHC Registration</h2>
-
     
-
     <div class="form-group" id="team-input-wrapper">
-
         <label id="team-label" for="teamName">Register Your Team Name</label>
-
         <input type="text" id="teamName" placeholder="e.g., The Couch Potatoes" maxlength="30">
-
-        
-
         <select id="teamDropdown" style="display: none;"></select>
-
     </div>
-
-
 
     <div class="form-group" id="gameplay-fields" style="display: none;">
-
         <label for="questionNum">Question Number</label>
-
-        <select id="questionNum">
-
-            <script>
-
-                for (let i = 1; i <= 50; i++) {
-
-                    document.write(`<option value="${i}">Question ${i}</option>`);
-
-                }
-
-            </script>
-
-        </select>
-
+        <select id="questionNum"></select>
     </div>
-
-
 
     <div class="form-group" id="answer-wrapper" style="display: none;">
-
         <label for="playerAnswer">Your Answer</label>
-
         <input type="text" id="playerAnswer" placeholder="Type your answer here..." autocomplete="off">
-
     </div>
 
-
-
     <button id="submit-btn" onclick="executeSubmissionRoute()">Check In Team</button>
-
     <div id="success" class="success-banner">🚀 Success! Sent to Host Panel.</div>
-
 </div>
-
-
 
 <script>
     const SUPABASE_URL = "https://qbevpwghcjtdeqlmkimh.supabase.co"; 
@@ -118,10 +55,18 @@
     let activeGlobalMode = "REGISTRATION"; 
 
     window.onload = function() {
+        // Build the question dropdown dynamically on load
+        const select = document.getElementById("questionNum");
+        for (let i = 1; i <= 50; i++) {
+            const opt = document.createElement("option");
+            opt.value = i;
+            opt.textContent = `Question ${i}`;
+            select.appendChild(opt);
+        }
+
         listenForGlobalGameModeToggles();
     };
 
-    // Connect real-time receiver
     function listenForGlobalGameModeToggles() {
         supabaseClient
             .channel('public:submissions')
@@ -134,13 +79,15 @@
     }
 
     async function refreshRosterListDropdown() {
-        const { data, error } = await supabaseClient.from('submissions').select('team_name');
-        if (data) {
-            const uniqueTeamsList = Array.from(new Set(data.map(item => item.team_name)));
+        try {
+            const { data, error } = await supabaseClient.from('submissions').select('team_name');
+            if (error) throw error;
+
+            const uniqueTeamsList = data ? Array.from(new Set(data.map(item => item.team_name))) : [];
             const dropdown = document.getElementById('teamDropdown');
             const cachedTeam = localStorage.getItem('trivia_team_name');
             
-            // Only morph the screen to gameplay if teams exist AND this specific device has registered
+            // Devices only transition to gameplay screens if they have registered a team locally
             if (uniqueTeamsList.length > 0 && cachedTeam) {
                 activeGlobalMode = "GAMEPLAY";
                 document.getElementById('app-title').innerText = "HHC Trivia Engine";
@@ -160,12 +107,10 @@
                 document.getElementById('answer-wrapper').style.display = 'block';
                 document.getElementById('submit-btn').innerText = "Lock It In!";
                 
-                // Keep team anchored to their selection
                 if (uniqueTeamsList.includes(cachedTeam)) {
                     dropdown.value = cachedTeam;
                 }
             } else {
-                // Keep in registration mode if they haven't checked in yet
                 activeGlobalMode = "REGISTRATION";
                 document.getElementById('app-title').innerText = "HHC Registration";
                 document.getElementById('teamName').style.display = 'block';
@@ -175,6 +120,8 @@
                 document.getElementById('answer-wrapper').style.display = 'none';
                 document.getElementById('submit-btn').innerText = "Check In Team";
             }
+        } catch (err) {
+            console.error("Database error: ", err);
         }
     }
 
@@ -189,14 +136,17 @@
             localStorage.setItem('trivia_team_name', chosenTeamName);
             submitBtn.disabled = true;
             
-            // Send a blank dummy text structure to log the team into the database rosters
-            await supabaseClient.from('submissions').insert([{ team_name: chosenTeamName, answer_submitted: "[Checked In]", round_number: 0, question_number: 0 }]);
+            const { error } = await supabaseClient.from('submissions').insert([{ team_name: chosenTeamName, answer_submitted: "[Checked In]", round_number: 0, question_number: 0 }]);
             
-            document.getElementById('success').innerText = "🎉 Team Registered! Watch the Big Screen.";
-            document.getElementById('success').style.display = 'block';
-            setTimeout(() => { location.reload(); }, 2000);
+            if (!error) {
+                document.getElementById('success').innerText = "🎉 Team Registered! Watch the Big Screen.";
+                document.getElementById('success').style.display = 'block';
+                setTimeout(() => { location.reload(); }, 2000);
+            } else {
+                alert("Registration failed. Please make sure your database project is fully unpaused in your Supabase admin panel!");
+                submitBtn.disabled = false;
+            }
         } 
-        
         else {
             chosenTeamName = document.getElementById('teamDropdown').value;
             const ansText = document.getElementById('playerAnswer').value.trim();
@@ -232,8 +182,5 @@
         }
     }
 </script>
-
 </body>
-
-</html> 
-
+</html>
