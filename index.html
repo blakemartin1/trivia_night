@@ -33,6 +33,12 @@
         <select id="teamDropdown" style="display: none;"></select>
     </div>
 
+    <!-- Live Pushed Question Output Container -->
+    <div class="form-group" id="question-broadcast-box" style="display: none; background: #0f172a; padding: 15px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 15px;">
+        <label id="broadcast-q-title" style="color: #38bdf8; font-weight: bold; margin-bottom: 6px;">Active Question</label>
+        <div id="broadcast-q-text" style="font-size: 1.05rem; line-height: 1.4; color: #f8fafc;">Waiting for host...</div>
+    </div>
+
     <div class="form-group" id="gameplay-fields" style="display: none;">
         <label for="questionNum">Question Number</label>
         <select id="questionNum"></select>
@@ -55,7 +61,6 @@
     let activeGlobalMode = "REGISTRATION"; 
 
     window.onload = function() {
-        // Build the question dropdown dynamically on load
         const select = document.getElementById("questionNum");
         for (let i = 1; i <= 50; i++) {
             const opt = document.createElement("option");
@@ -63,15 +68,40 @@
             opt.textContent = `Question ${i}`;
             select.appendChild(opt);
         }
+        // Handle standalone tiebreaker select option entry
+        const tieOpt = document.createElement("option");
+        tieOpt.value = 51;
+        tieOpt.textContent = "Tiebreaker Question";
+        select.appendChild(tieOpt);
 
         listenForGlobalGameModeToggles();
     };
 
     function listenForGlobalGameModeToggles() {
+        // Postgres Database Roster Synchronization channel listener
         supabaseClient
             .channel('public:submissions')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'submissions' }, async () => {
                 refreshRosterListDropdown();
+            })
+            .subscribe();
+
+        // Broadcast Real-time Messaging Channel Listener
+        supabaseClient
+            .channel('trivia-broadcast')
+            .on('broadcast', { event: 'show-question' }, (payload) => {
+                const data = payload.payload;
+                if (activeGlobalMode === "GAMEPLAY") {
+                    document.getElementById('question-broadcast-box').style.display = 'block';
+                    document.getElementById('broadcast-q-title').innerText = data.number === 51 ? "🏆 Tiebreaker Question" : `Active Question ${data.number}`;
+                    document.getElementById('broadcast-q-text').innerText = data.text;
+                    
+                    const qSelect = document.getElementById('questionNum');
+                    if (qSelect) qSelect.value = data.number;
+                }
+            })
+            .on('broadcast', { event: 'clear-question' }, () => {
+                document.getElementById('question-broadcast-box').style.display = 'none';
             })
             .subscribe();
             
@@ -87,7 +117,6 @@
             const dropdown = document.getElementById('teamDropdown');
             const cachedTeam = localStorage.getItem('trivia_team_name');
             
-            // Devices only transition to gameplay screens if they have registered a team locally
             if (uniqueTeamsList.length > 0 && cachedTeam) {
                 activeGlobalMode = "GAMEPLAY";
                 document.getElementById('app-title').innerText = "HHC Trivia Engine";
@@ -119,9 +148,10 @@
                 document.getElementById('gameplay-fields').style.display = 'none';
                 document.getElementById('answer-wrapper').style.display = 'none';
                 document.getElementById('submit-btn').innerText = "Check In Team";
+                document.getElementById('question-broadcast-box').style.display = 'none';
             }
         } catch (err) {
-            console.error("Database error: ", err);
+            console.error("Database connection array extraction logic error: ", err);
         }
     }
 
@@ -143,7 +173,7 @@
                 document.getElementById('success').style.display = 'block';
                 setTimeout(() => { location.reload(); }, 2000);
             } else {
-                alert("Registration failed. Please make sure your database project is fully unpaused in your Supabase admin panel!");
+                alert("Registration failed. Confirm your Supabase instance is unpaused!");
                 submitBtn.disabled = false;
             }
         } 
@@ -158,12 +188,11 @@
             submitBtn.disabled = true;
             submitBtn.innerText = "Sending...";
 
-            const roundNum = Math.ceil(qNum / 10);
+            const roundNum = qNum === 51 ? 6 : Math.ceil(qNum / 10);
             const { error } = await supabaseClient.from('submissions').insert([{ team_name: chosenTeamName, answer_submitted: ansText, round_number: roundNum, question_number: qNum }]);
 
             if (!error) {
                 document.getElementById('playerAnswer').value = '';
-                if (qNum < 50) document.getElementById('questionNum').value = qNum + 1;
                 
                 const banner = document.getElementById('success');
                 banner.innerText = "🚀 Answer sent to host panel!";
@@ -175,7 +204,7 @@
                     submitBtn.innerText = "Lock It In!";
                 }, 2000);
             } else {
-                alert("Error sending. Please retry.");
+                alert("Error sending answer. Please retry.");
                 submitBtn.disabled = false;
                 submitBtn.innerText = "Lock It In!";
             }
